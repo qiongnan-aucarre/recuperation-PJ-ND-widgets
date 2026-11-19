@@ -259,6 +259,17 @@
                 )
               : null;
             const counts = countsFromJobName(reportJob && reportJob.name);
+            const errorJob = Array.isArray(jobsPayload && jobsPayload.jobs)
+              ? jobsPayload.jobs.find(
+                  (item) =>
+                    item &&
+                    typeof item.name === "string" &&
+                    item.name.startsWith("PJ_ERROR ")
+                )
+              : null;
+            const errorDetail = errorJob
+              ? errorJob.name.slice("PJ_ERROR ".length).trim() || null
+              : null;
             const importStep =
               job && Array.isArray(job.steps)
                 ? job.steps.find(
@@ -280,6 +291,7 @@
               conclusion: matchingRun.conclusion,
               durationSeconds,
               counts,
+              errorDetail,
               runUrl: `https://github.com/${owner}/${repository}/actions/runs/${matchingRun.id}`,
             };
           }
@@ -307,7 +319,14 @@
     };
   }
 
-  function statusFor(state, statusCode, durationSeconds, counts, progress) {
+  function statusFor(
+    state,
+    statusCode,
+    durationSeconds,
+    counts,
+    progress,
+    errorDetail
+  ) {
     if (state === "pending") {
       return {
         text: "Déclenchement du workflow en cours…",
@@ -317,10 +336,15 @@
     if (state === "tracking") {
       const estimate = formatDuration(progress && progress.estimatedSeconds);
       const elapsed = formatDuration(progress && progress.elapsedSeconds);
+      const estimateText = estimate
+        ? `Durée habituelle : environ ${estimate}.`
+        : progress
+          ? "Durée estimée indisponible : aucun import réussi précédemment."
+          : "Calcul de la durée estimée…";
       return {
         text: [
           "Import lancé. Suivi de son exécution en cours…",
-          estimate ? `Durée habituelle : environ ${estimate}.` : "",
+          estimateText,
           elapsed ? `Temps écoulé : ${elapsed}.` : "",
         ]
           .filter(Boolean)
@@ -349,8 +373,11 @@
           duration
             ? `L’import a échoué après ${duration}.`
             : "L’import a échoué.",
+          errorDetail ? `Motif : ${errorDetail}` : "",
           counts ? `Bilan partiel : ${formatCounts(counts)}` : "",
-          "Consultez le journal du workflow dans GitHub Actions.",
+          errorDetail
+            ? ""
+            : "Consultez le journal du workflow dans GitHub Actions.",
         ]
           .filter(Boolean)
           .join(" "),
@@ -427,13 +454,21 @@
     let token = "";
     let tracking = false;
 
-    function render(state, statusCode, durationSeconds, counts, progress) {
+    function render(
+      state,
+      statusCode,
+      durationSeconds,
+      counts,
+      progress,
+      errorDetail
+    ) {
       const message = statusFor(
         state,
         statusCode,
         durationSeconds,
         counts,
-        progress
+        progress,
+        errorDetail
       );
       status.textContent = message.text;
       status.dataset.state = message.state;
@@ -512,7 +547,9 @@
             result.conclusion === "success" ? "run-success" : "run-failure",
             undefined,
             result.durationSeconds,
-            result.counts
+            result.counts,
+            undefined,
+            result.errorDetail
           );
         }
       } catch (error) {

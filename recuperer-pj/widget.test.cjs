@@ -331,6 +331,30 @@ test("stops early when the dispatched run cannot be found", async () => {
   assert.match(statusFor("tracking-not-found").text, /introuvable/);
 });
 
-test("failed import points to the workflow log", () => {
+test("failed import points to the workflow log or shows its reason", () => {
   assert.match(statusFor("run-failure", undefined, 12).text, /^L’import a échoué après 12 s\..*journal/);
+  assert.equal(
+    statusFor("run-failure", undefined, 1, null, undefined, "Échec de la requête Démarche Numérique (HTTP 403).").text,
+    "L’import a échoué après 1 s. Motif : Échec de la requête Démarche Numérique (HTTP 403)."
+  );
+});
+
+test("explains why no estimate is shown", () => {
+  assert.match(statusFor("tracking").text, /Calcul de la durée estimée/);
+  assert.match(
+    statusFor("tracking", undefined, undefined, undefined, { elapsedSeconds: 10, estimatedSeconds: null }).text,
+    /aucun import réussi précédemment.*Temps écoulé : 10 s\./
+  );
+});
+
+test("extracts the failure reason from the PJ_ERROR job", async () => {
+  let call = 0;
+  const controller = createWorkflowController(async () => {
+    call += 1;
+    return call === 1
+      ? { status: 200, json: async () => ({ workflow_runs: [{ id: 5, display_title: "Import PJ r", status: "completed", conclusion: "failure" }] }) }
+      : { status: 200, json: async () => ({ jobs: [{ name: "PJ_ERROR Échec de la requête Démarche Numérique (HTTP 403)." }] }) };
+  });
+  const result = await controller.waitForCompletion(settings, "t", "r");
+  assert.equal(result.errorDetail, "Échec de la requête Démarche Numérique (HTTP 403).");
 });
