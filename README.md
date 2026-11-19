@@ -13,16 +13,16 @@ Le script d’import et son workflow GitHub Actions se trouvent dans un **dépô
 
 Le dépôt et le workflow ciblés sont définis dans `SETTINGS` en haut de [`recuperer-pj/widget.js`](./recuperer-pj/widget.js) (`owner`, `repository`, `workflow`, `ref`). Mettez-les à jour si le dépôt privé ou le fichier de workflow est renommé.
 
-## Publication (GitHub Pages)
+## URL directes des widgets (GitHub Pages)
 
 1. **Settings › Pages** : *Source* = *Deploy from a branch*, branche `main`, dossier `/ (root)`.
-2. Les widgets sont alors disponibles à :
+2. Après publication, utiliser directement l’une de ces URL dans Grist (aucune page d’accueil n’est nécessaire) :
    - `https://<compte>.github.io/<ce-depot>/recuperer-pj/`
    - `https://<compte>.github.io/<ce-depot>/visualiser-pj/`
 
 ## Installation dans Grist
 
-1. Ajouter un widget : **Personnalisé** › **URL personnalisée**, puis coller l’URL ci-dessus.
+1. Ajouter un widget : **Personnalisé** › **URL personnalisée**, puis coller l’URL directe correspondant au widget souhaité.
 2. **Importer PJ** : ouvrir les **Options du widget** (menu du widget), saisir le jeton GitHub, enregistrer.
 3. **Prévisualiser les PJ** : connecter le widget à la table `PJ_Dossiers`, autoriser la lecture de la table et activer le suivi de la ligne sélectionnée.
 
