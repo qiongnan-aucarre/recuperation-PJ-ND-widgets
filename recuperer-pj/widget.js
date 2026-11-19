@@ -290,7 +290,6 @@
             ? `L’import a échoué après ${duration}.`
             : "L’import a échoué.",
           counts ? `Bilan partiel : ${formatCounts(counts)}` : "",
-          "Consultez le détail dans GitHub Actions.",
         ]
           .filter(Boolean)
           .join(" "),
@@ -299,7 +298,7 @@
     }
     if (state === "tracking-timeout") {
       return {
-        text: "Le workflow s’exécute peut-être encore. Le suivi dans le widget s’arrête après 15 minutes ; consultez GitHub Actions.",
+        text: "Le workflow s’exécute peut-être encore. Le suivi dans le widget s’arrête après 15 minutes.",
         state: "error",
       };
     }
@@ -311,13 +310,13 @@
     }
     if (state === "tracking-error") {
       return {
-        text: "Le workflow a été lancé, mais son résultat n’a pas pu être récupéré. Consultez GitHub Actions.",
+        text: "Le workflow a été lancé, mais son résultat n’a pas pu être récupéré.",
         state: "error",
       };
     }
     if (state === "success") {
       return {
-        text: "Workflow déclenché. L’import n’est pas encore terminé ; consultez son suivi et son résultat dans GitHub Actions.",
+        text: "Workflow déclenché. L’import n’est pas encore terminé ; son suivi est en cours dans le widget.",
         state: "success",
       };
     }
@@ -357,10 +356,6 @@
     const settingsForm = document.getElementById("settings-form");
     const settingsStatus = document.getElementById("settings-status");
     const cancelSettings = document.getElementById("cancel-settings");
-    const actionsLinkContainer = document.getElementById(
-      "actions-link-container"
-    );
-    const actionsLink = document.getElementById("actions-link");
     const controller = createWorkflowController(fetchImpl);
     let token = "";
     let tracking = false;
@@ -420,7 +415,6 @@
         return;
       }
 
-      actionsLinkContainer.hidden = true;
       render("pending");
       const requestId = root.crypto.randomUUID();
       let workflowAccepted = false;
@@ -434,16 +428,11 @@
           workflowAccepted = true;
           tracking = true;
           render("tracking");
-          actionsLink.href = `https://github.com/${encodeURIComponent(
-            SETTINGS.owner
-          )}/${encodeURIComponent(SETTINGS.repository)}/actions`;
-          actionsLinkContainer.hidden = false;
           const result = await controller.waitForCompletion(
             SETTINGS,
             token,
             requestId
           );
-          actionsLink.href = result.runUrl;
           render(
             result.conclusion === "success" ? "run-success" : "run-failure",
             undefined,
@@ -453,13 +442,6 @@
         }
       } catch (error) {
         if (workflowAccepted && error && error.kind === "tracking-timeout") {
-          if (error.runId) {
-            actionsLink.href = `https://github.com/${encodeURIComponent(
-              SETTINGS.owner
-            )}/${encodeURIComponent(
-              SETTINGS.repository
-            )}/actions/runs/${error.runId}`;
-          }
           render("tracking-timeout");
         } else if (workflowAccepted && error && error.kind === "tracking-http") {
           render("tracking-http-error", error.status);

@@ -64,6 +64,7 @@ test("keeps all text inputs out of the main widget view", () => {
 
   assert.ok(mainPanel);
   assert.doesNotMatch(mainPanel[1], /<input\b/i);
+  assert.doesNotMatch(mainPanel[1], /GitHub Actions/i);
   assert.match(mainPanel[1], /Importer les PJ/);
 });
 
