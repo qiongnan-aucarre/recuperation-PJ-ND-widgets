@@ -11,6 +11,8 @@
   const API_BASE = "https://api.github.com";
   const POLL_INTERVAL_MS = 10000;
   const TRACKING_TIMEOUT_MS = 15 * 60 * 1000;
+  const RUN_NOT_FOUND_TIMEOUT_MS = 2 * 60 * 1000;
+  const ESTIMATE_SAMPLE_SIZE = 5;
 
   function formatDuration(seconds) {
     if (!Number.isFinite(seconds) || seconds < 0) {
@@ -55,6 +57,36 @@
       updated: Number(match[4]),
     };
     return Object.values(counts).every(Number.isSafeInteger) ? counts : null;
+  }
+
+  function estimateDurationSeconds(runs, currentTitle) {
+    if (!Array.isArray(runs)) {
+      return null;
+    }
+    const durations = runs
+      .filter(
+        (run) =>
+          run &&
+          run.status === "completed" &&
+          run.conclusion === "success" &&
+          run.display_title !== currentTitle
+      )
+      .map(
+        (run) =>
+          (Date.parse(run.updated_at) - Date.parse(run.run_started_at)) / 1000
+      )
+      .filter((seconds) => Number.isFinite(seconds) && seconds > 0)
+      .slice(0, ESTIMATE_SAMPLE_SIZE)
+      .sort((a, b) => a - b);
+    if (!durations.length) {
+      return null;
+    }
+    const middle = Math.floor(durations.length / 2);
+    const median =
+      durations.length % 2
+        ? durations[middle]
+        : (durations[middle - 1] + durations[middle]) / 2;
+    return Math.round(median);
   }
 
   function formatCounts(counts) {
@@ -127,7 +159,7 @@
         }
       },
 
-      async waitForCompletion(settings, token, requestId) {
+      async waitForCompletion(settings, token, requestId, onProgress) {
         const owner = encodeURIComponent(settings.owner);
         const repository = encodeURIComponent(settings.repository);
         const workflow = encodeURIComponent(settings.workflow);
@@ -137,8 +169,12 @@
         runsUrl.searchParams.set("event", "workflow_dispatch");
         runsUrl.searchParams.set("branch", settings.ref);
         runsUrl.searchParams.set("per_page", "100");
-        const deadline = now() + (timing.timeoutMs || TRACKING_TIMEOUT_MS);
+        const startedAt = now();
+        const deadline = startedAt + (timing.timeoutMs || TRACKING_TIMEOUT_MS);
+        const notFoundDeadline =
+          startedAt + (timing.notFoundTimeoutMs || RUN_NOT_FOUND_TIMEOUT_MS);
         let matchingRun = null;
+        let estimatedSeconds = null;
 
         while (now() < deadline) {
           let response;
@@ -174,6 +210,15 @@
               Number.isSafeInteger(run.id) &&
               run.id > 0
           );
+          if (estimatedSeconds === null) {
+            estimatedSeconds = estimateDurationSeconds(
+              payload.workflow_runs,
+              workflowRunTitle(requestId)
+            );
+          }
+          if (!matchingRun && now() >= notFoundDeadline) {
+            throw { kind: "tracking-not-found" };
+          }
           if (matchingRun && matchingRun.status === "completed") {
             let jobsResponse;
             try {
@@ -239,6 +284,13 @@
             };
           }
 
+          if (typeof onProgress === "function") {
+            onProgress({
+              elapsedSeconds: Math.round((now() - startedAt) / 1000),
+              estimatedSeconds,
+            });
+          }
+
           const remaining = deadline - now();
           if (remaining > 0) {
             await sleep(
@@ -255,7 +307,7 @@
     };
   }
 
-  function statusFor(state, statusCode, durationSeconds, counts) {
+  function statusFor(state, statusCode, durationSeconds, counts, progress) {
     if (state === "pending") {
       return {
         text: "Déclenchement du workflow en cours…",
@@ -263,8 +315,16 @@
       };
     }
     if (state === "tracking") {
+      const estimate = formatDuration(progress && progress.estimatedSeconds);
+      const elapsed = formatDuration(progress && progress.elapsedSeconds);
       return {
-        text: "Import lancé. Suivi de son exécution en cours…",
+        text: [
+          "Import lancé. Suivi de son exécution en cours…",
+          estimate ? `Durée habituelle : environ ${estimate}.` : "",
+          elapsed ? `Temps écoulé : ${elapsed}.` : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
         state: "pending",
       };
     }
@@ -290,6 +350,7 @@
             ? `L’import a échoué après ${duration}.`
             : "L’import a échoué.",
           counts ? `Bilan partiel : ${formatCounts(counts)}` : "",
+          "Consultez le journal du workflow dans GitHub Actions.",
         ]
           .filter(Boolean)
           .join(" "),
@@ -299,6 +360,12 @@
     if (state === "tracking-timeout") {
       return {
         text: "Le workflow s’exécute peut-être encore. Le suivi dans le widget s’arrête après 15 minutes.",
+        state: "error",
+      };
+    }
+    if (state === "tracking-not-found") {
+      return {
+        text: "Le workflow a été lancé, mais son exécution est introuvable. Vérifiez que son run-name contient l’identifiant de la demande.",
         state: "error",
       };
     }
@@ -360,8 +427,14 @@
     let token = "";
     let tracking = false;
 
-    function render(state, statusCode, durationSeconds, counts) {
-      const message = statusFor(state, statusCode, durationSeconds, counts);
+    function render(state, statusCode, durationSeconds, counts, progress) {
+      const message = statusFor(
+        state,
+        statusCode,
+        durationSeconds,
+        counts,
+        progress
+      );
       status.textContent = message.text;
       status.dataset.state = message.state;
       status.setAttribute("role", message.state === "error" ? "alert" : "status");
@@ -431,7 +504,9 @@
           const result = await controller.waitForCompletion(
             SETTINGS,
             token,
-            requestId
+            requestId,
+            (progress) =>
+              render("tracking", undefined, undefined, undefined, progress)
           );
           render(
             result.conclusion === "success" ? "run-success" : "run-failure",
@@ -443,6 +518,8 @@
       } catch (error) {
         if (workflowAccepted && error && error.kind === "tracking-timeout") {
           render("tracking-timeout");
+        } else if (workflowAccepted && error && error.kind === "tracking-not-found") {
+          render("tracking-not-found");
         } else if (workflowAccepted && error && error.kind === "tracking-http") {
           render("tracking-http-error", error.status);
         } else if (workflowAccepted) {
@@ -477,6 +554,7 @@
       createWorkflowController,
       formatDuration,
       countsFromJobName,
+      estimateDurationSeconds,
       formatCounts,
       statusFor,
       workflowRunTitle,

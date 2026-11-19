@@ -5,6 +5,7 @@ const test = require("node:test");
 const {
   createWorkflowController,
   countsFromJobName,
+  estimateDurationSeconds,
   formatCounts,
   formatDuration,
   statusFor,
@@ -264,4 +265,72 @@ test("handles network errors without exposing exception details", async () => {
     kind: "network",
   });
   assert.equal(statusFor("network-error").state, "error");
+});
+
+test("estimates duration from recent successful runs and reports progress", async () => {
+  const runs = [
+    { status: "completed", conclusion: "success", display_title: "Import PJ a", run_started_at: "2026-11-18T10:00:00Z", updated_at: "2026-11-18T10:02:00Z" },
+    { status: "completed", conclusion: "failure", display_title: "Import PJ b", run_started_at: "2026-11-18T09:00:00Z", updated_at: "2026-11-18T09:00:10Z" },
+    { status: "completed", conclusion: "success", display_title: "Import PJ c", run_started_at: "2026-11-18T08:00:00Z", updated_at: "2026-11-18T08:03:00Z" },
+    { status: "completed", conclusion: "success", display_title: "Import PJ d", run_started_at: "2026-11-18T07:00:00Z", updated_at: "2026-11-18T07:01:00Z" },
+  ];
+  assert.equal(estimateDurationSeconds(runs, "Import PJ x"), 120);
+  assert.equal(estimateDurationSeconds([], "Import PJ x"), null);
+
+  let currentTime = 0;
+  const progress = [];
+  const controller = createWorkflowController(
+    async () => ({
+      status: 200,
+      json: async () => ({
+        workflow_runs: [
+          { id: 7, display_title: "Import PJ request-123", status: "in_progress" },
+          ...runs,
+        ],
+      }),
+    }),
+    {
+      now: () => currentTime,
+      sleep: async (ms) => { currentTime += ms; },
+      pollIntervalMs: 10000,
+      timeoutMs: 15000,
+    }
+  );
+  await assert.rejects(
+    controller.waitForCompletion(settings, "t", "request-123", (p) => progress.push(p)),
+    { kind: "tracking-timeout" }
+  );
+  assert.deepEqual(progress[0], { elapsedSeconds: 0, estimatedSeconds: 120 });
+  assert.equal(
+    statusFor("tracking", undefined, undefined, undefined, progress[0]).text,
+    "Import lancé. Suivi de son exécution en cours… Durée habituelle : environ 2 min. Temps écoulé : 0 s."
+  );
+});
+
+test("stops early when the dispatched run cannot be found", async () => {
+  let currentTime = 0;
+  const controller = createWorkflowController(
+    async () => ({
+      status: 200,
+      json: async () => ({
+        workflow_runs: [{ id: 9, display_title: "Import PJ", status: "completed", conclusion: "failure" }],
+      }),
+    }),
+    {
+      now: () => currentTime,
+      sleep: async (ms) => { currentTime += ms; },
+      pollIntervalMs: 10000,
+      notFoundTimeoutMs: 30000,
+    }
+  );
+  await assert.rejects(
+    controller.waitForCompletion(settings, "t", "request-123"),
+    { kind: "tracking-not-found" }
+  );
+  assert.equal(currentTime, 30000);
+  assert.match(statusFor("tracking-not-found").text, /introuvable/);
+});
+
+test("failed import points to the workflow log", () => {
+  assert.match(statusFor("run-failure", undefined, 12).text, /^L’import a échoué après 12 s\..*journal/);
 });
