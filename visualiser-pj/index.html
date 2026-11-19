@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Prévisualiser les PJ</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: Marianne, Arial, sans-serif;
+        color: #161616;
+        background: #fff;
+      }
+
+      body {
+        box-sizing: border-box;
+        max-width: 56rem;
+        margin: 0 auto;
+        padding: 1.5rem;
+      }
+
+      h1 {
+        margin: 0 0 0.75rem;
+        font-size: 1.375rem;
+        line-height: 1.4;
+      }
+
+      p {
+        line-height: 1.5;
+      }
+
+      .intro {
+        margin-top: 0;
+        color: #3a3a3a;
+      }
+
+      #status {
+        min-height: 1.5rem;
+        font-weight: 600;
+      }
+
+      #status[data-state="error"] {
+        color: #b34000;
+      }
+
+      .record-info {
+        margin: 1.25rem 0;
+        padding: 0.75rem 1rem;
+        border-left: 0.25rem solid #000091;
+        background: #f6f6f6;
+      }
+
+      #attachments {
+        display: grid;
+        gap: 1rem;
+      }
+
+      .attachment {
+        min-width: 0;
+        padding: 1rem;
+        border: 1px solid #ddd;
+      }
+
+      .attachment h2 {
+        margin: 0 0 0.75rem;
+        font-size: 1.125rem;
+        line-height: 1.5;
+        overflow-wrap: anywhere;
+      }
+
+      .filename-unavailable {
+        margin: 0 0 0.75rem;
+        color: #666;
+        font-size: 0.875rem;
+      }
+
+      .preview {
+        display: flex;
+        justify-content: center;
+        overflow: auto;
+        max-height: 70vh;
+        background: #f6f6f6;
+      }
+
+      .preview img {
+        max-width: 100%;
+        max-height: 70vh;
+        object-fit: contain;
+      }
+
+      .preview iframe {
+        width: 100%;
+        min-height: 28rem;
+        border: 0;
+        background: #fff;
+      }
+
+      .attachment-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+      }
+
+      a {
+        display: inline-flex;
+        align-items: center;
+        min-height: 2.75rem;
+        margin-top: 0.75rem;
+        color: #000091;
+        text-decoration: underline;
+        text-underline-offset: 0.15em;
+      }
+
+      a:focus-visible {
+        outline: 0.2rem solid #0a76f6;
+        outline-offset: 0.2rem;
+      }
+
+      @media (max-width: 32rem) {
+        body {
+          padding: 1rem;
+        }
+
+        .preview iframe {
+          min-height: 22rem;
+        }
+      }
+
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Prévisualiser les PJ</h1>
+      <p class="intro">
+        Sélectionnez une ligne pour consulter ses pièces jointes.
+      </p>
+      <p id="status" role="status" aria-live="polite" aria-atomic="true">
+        En attente d’une ligne sélectionnée.
+      </p>
+      <p id="record-info" class="record-info" hidden>
+        <strong>Numéro de dossier :</strong>
+        <span id="dossier-number"></span>
+      </p>
+      <section id="attachments" aria-label="Pièces jointes"></section>
+    </main>
+    <script src="https://docs.getgrist.com/grist-plugin-api.js"></script>
+    <script src="./widget.js"></script>
+  </body>
+</html>
