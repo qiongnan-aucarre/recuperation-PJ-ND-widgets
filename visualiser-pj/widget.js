@@ -42,6 +42,11 @@
     return dossierNumber || "Non renseigné";
   }
 
+  function getRecordId(record) {
+    const id = record && record.id;
+    return Number.isSafeInteger(id) && id > 0 ? id : null;
+  }
+
   function addAttachmentCard(document, index, fileName, objectUrl, contentType) {
     const card = document.createElement("article");
     card.className = "attachment";
@@ -118,6 +123,8 @@
     const dossierNumberElement = document.getElementById("dossier-number");
     let generation = 0;
     let objectUrls = [];
+    let selectedRecordId = null;
+    let currentRecordIds = null;
 
     function clearPreviews() {
       for (const objectUrl of objectUrls) {
@@ -304,8 +311,35 @@
       }
     }
 
+    function handleRecord(record) {
+      const recordId = getRecordId(record);
+      if (
+        recordId !== null &&
+        currentRecordIds !== null &&
+        !currentRecordIds.has(recordId)
+      ) {
+        selectedRecordId = null;
+        return showRecord(null);
+      }
+
+      selectedRecordId = recordId;
+      return showRecord(record);
+    }
+
     grist.ready({ requiredAccess: "read table" });
-    grist.onRecord((record) => showRecord(record));
+    grist.onRecord(handleRecord);
+    grist.onRecords((records) => {
+      currentRecordIds = new Set(
+        records.map(getRecordId).filter((id) => id !== null)
+      );
+      if (
+        selectedRecordId !== null &&
+        !currentRecordIds.has(selectedRecordId)
+      ) {
+        selectedRecordId = null;
+        showRecord(null);
+      }
+    });
     eventTarget.addEventListener("pagehide", () => {
       generation += 1;
       clearPreviews();
@@ -315,6 +349,7 @@
   if (typeof module !== "undefined" && module.exports) {
     module.exports = {
       formatDossierNumber,
+      getRecordId,
       getAttachmentIds,
       getAttachmentFileName,
       previewKind,

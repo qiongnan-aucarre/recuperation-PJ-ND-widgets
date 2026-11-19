@@ -3,6 +3,7 @@
 const assert = require("node:assert/strict");
 const {
   formatDossierNumber,
+  getRecordId,
   getAttachmentIds,
   getAttachmentFileName,
   previewKind,
@@ -24,6 +25,9 @@ assert.equal(getAttachmentFileName({}), null);
 assert.equal(formatDossierNumber(123456), "123456");
 assert.equal(formatDossierNumber(" 123456 "), "123456");
 assert.equal(formatDossierNumber(null), "Non renseigné");
+assert.equal(getRecordId({ id: 12 }), 12);
+assert.equal(getRecordId({ id: "12" }), null);
+assert.equal(getRecordId(null), null);
 
 function createElement(tagName) {
   return {
@@ -81,11 +85,15 @@ function makeDocument() {
 async function testClearsDeletedSelectedRecord() {
   const document = makeDocument();
   let onRecord;
+  let onRecords;
   let revokedObjectUrl = null;
   const grist = {
     ready() {},
     onRecord(callback) {
       onRecord = callback;
+    },
+    onRecords(callback) {
+      onRecords = callback;
     },
     docApi: {
       async getAccessToken() {
@@ -121,7 +129,8 @@ async function testClearsDeletedSelectedRecord() {
   };
   initialize(document, grist, fetchImpl, urlApi, { addEventListener() {} });
 
-  await onRecord({ numero_dossier: 123, PJ: ["L", 42] });
+  onRecords([{ id: 1 }]);
+  await onRecord({ id: 1, numero_dossier: 123, PJ: ["L", 42] });
   assert.equal(document.elements.get("attachments").children.length, 1);
   assert.equal(document.elements.get("record-info").hidden, false);
   assert.match(
@@ -136,6 +145,70 @@ async function testClearsDeletedSelectedRecord() {
   assert.match(document.elements.get("status").textContent, /Sélectionnez une ligne/);
 }
 
+async function testClearsPreviewWhenSelectedRowIsDeleted() {
+  const document = makeDocument();
+  let onRecord;
+  let onRecords;
+  let revokedObjectUrl = null;
+  const grist = {
+    ready() {},
+    onRecord(callback) {
+      onRecord = callback;
+    },
+    onRecords(callback) {
+      onRecords = callback;
+    },
+    docApi: {
+      async getAccessToken() {
+        return {
+          baseUrl: "https://grist.example/api/docs/doc/",
+          token: "read-token",
+        };
+      },
+    },
+  };
+  const fetchImpl = async (url) => {
+    if (url.includes("/attachments/42?")) {
+      return {
+        ok: true,
+        async json() {
+          return { fileName: "document.pdf" };
+        },
+      };
+    }
+    return {
+      ok: true,
+      headers: { get: () => "application/pdf" },
+      async blob() {
+        return { type: "application/pdf" };
+      },
+    };
+  };
+  const urlApi = {
+    createObjectURL: () => "blob:deleted-document",
+    revokeObjectURL(url) {
+      revokedObjectUrl = url;
+    },
+  };
+  initialize(document, grist, fetchImpl, urlApi, { addEventListener() {} });
+
+  onRecords([{ id: 1 }]);
+  await onRecord({ id: 1, numero_dossier: 123, PJ: ["L", 42] });
+  assert.equal(document.elements.get("attachments").children.length, 1);
+
+  onRecords([]);
+  assert.equal(document.elements.get("attachments").children.length, 0);
+  assert.equal(document.elements.get("record-info").hidden, true);
+  assert.equal(revokedObjectUrl, "blob:deleted-document");
+
+  await onRecord({ id: 1, numero_dossier: 123, PJ: ["L", 42] });
+  assert.equal(document.elements.get("attachments").children.length, 0);
+  assert.match(
+    document.elements.get("status").textContent,
+    /Sélectionnez une ligne/
+  );
+}
+
 async function testAttachmentPreviewUsesGristAuthUrl() {
   const document = makeDocument();
   let onRecord;
@@ -145,6 +218,7 @@ async function testAttachmentPreviewUsesGristAuthUrl() {
     onRecord(callback) {
       onRecord = callback;
     },
+    onRecords() {},
     docApi: {
       async getAccessToken() {
         return {
@@ -203,6 +277,7 @@ async function testIgnoresAccessTokenAfterSelectionChanges() {
     onRecord(callback) {
       onRecord = callback;
     },
+    onRecords() {},
     docApi: {
       getAccessToken() {
         return new Promise((resolve) => {
@@ -236,6 +311,7 @@ async function testIgnoresAccessTokenAfterSelectionChanges() {
 
 Promise.all([
   testClearsDeletedSelectedRecord(),
+  testClearsPreviewWhenSelectedRowIsDeleted(),
   testAttachmentPreviewUsesGristAuthUrl(),
   testIgnoresAccessTokenAfterSelectionChanges(),
 ])
